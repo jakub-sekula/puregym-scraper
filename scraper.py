@@ -2,68 +2,82 @@ import re
 import requests
 from bs4 import BeautifulSoup
 import time
+import argparse
 
 class AuthenticationError(Exception):
     pass
 
-start_time = time.time()
-
-USERNAME = "username"
-PASSWORD = "password"
-
-url = "https://puregym.com/members"
-
-session = requests.session()
-
-response = session.get(url)
-
-soup = BeautifulSoup(response.content, "html.parser")
-login_form = soup.find("form")
-action_url = response.url
-requestVerificationToken = login_form.find(
-    "input", {"name": "__RequestVerificationToken"}
-).get("value")
-
-data = {
-    "username": USERNAME,
-    "password": PASSWORD,
-    "__RequestVerificationToken": requestVerificationToken,
-    "button": "login",
-}
-
-login_response = session.post(action_url, data=data)
-
-if not login_response.status_code == 200:
-    raise AuthenticationError(f'Authentication failed for user {USERNAME}')
+def get_gym_occupancy(username, password):
 
 
-soup = BeautifulSoup(login_response.content, "html.parser")
-form = soup.find("form")
-action_url = form.get("action")
-code = form.find("input", {"name": "code"}).get("value")
-id_token = form.find("input", {"name": "id_token"}).get("value")
-scope = form.find("input", {"name": "scope"}).get("value")
-state = form.find("input", {"name": "state"}).get("value")
-session_state = form.find("input", {"name": "session_state"}).get("value")
+    ENTRY_URL = "https://puregym.com/members"
 
-data = {
-    "code": code,
-    "id_token": id_token,
-    "scope": scope,
-    "state": state,
-    "session_state": session_state,
-}
+    session = requests.session()
 
-final_response = session.post(action_url, data=data)
+    response = session.get(ENTRY_URL)
 
-soup = BeautifulSoup(final_response.content, "html.parser")
-people_in_gym = soup.find("p", {"id": "people_in_gym"}).find("span").text
+    # The login page has a hidden field with a CSRF token which we need to submit
+    # along with our credentials.
 
-people_in_gym = re.search('\d+', people_in_gym).group()
+    soup = BeautifulSoup(response.content, "html.parser")
+    login_form = soup.find("form")
+    requestVerificationToken = login_form.find(
+        "input", {"name": "__RequestVerificationToken"}
+    ).get("value")
 
-print(people_in_gym)
+    data = {
+        "username": username,
+        "password": password,
+        "__RequestVerificationToken": requestVerificationToken,
+        "button": "login",
+    }
 
-end_time = time.time()
+    login_response = session.post(response.url, data=data)
 
-total_time = end_time - start_time
-print('Finished in ', total_time, 's')
+    if not login_response.status_code == 200:
+        raise AuthenticationError(f'Authentication failed for user {args.username}')
+
+    # If the credentials are correct, it redirects us to a page with a hidden form
+    # containing OAuth parameters. We need to submit this form to get to the final
+    # members' area.
+
+    soup = BeautifulSoup(login_response.content, "html.parser")
+    hidden_form = soup.find("form")
+
+    action_url = hidden_form.get("action")
+    code = hidden_form.find("input", {"name": "code"}).get("value")
+    id_token = hidden_form.find("input", {"name": "id_token"}).get("value")
+    scope = hidden_form.find("input", {"name": "scope"}).get("value")
+    state = hidden_form.find("input", {"name": "state"}).get("value")
+    session_state = hidden_form.find("input", {"name": "session_state"}).get("value")
+
+    data = {
+        "code": code,
+        "id_token": id_token,
+        "scope": scope,
+        "state": state,
+        "session_state": session_state,
+    }
+
+
+    final_response = session.post(action_url, data=data)
+
+    soup = BeautifulSoup(final_response.content, "html.parser")
+    people_in_gym = soup.find("p", {"id": "people_in_gym"}).find("span").text
+
+    # Regular expression to extract only the number
+    people_in_gym = re.search('\d+', people_in_gym).group()
+
+    return people_in_gym
+
+if __name__ == "__main__":
+    start_time = time.time()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("username")
+    parser.add_argument("password")
+    args = parser.parse_args()
+
+    people_in_gym = get_gym_occupancy(args.username, args.password)
+    print(people_in_gym)
+    print('Finished in ', time.time() - start_time, 's')
