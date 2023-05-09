@@ -1,4 +1,4 @@
-#puregym-scraper
+# puregym-scraper
 
 Simple script for scraping Puregym occupancy data.
 
