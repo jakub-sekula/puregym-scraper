@@ -1,4 +1,3 @@
-jakub@timemachine:~/puregym-attendance $ cat run.sh
 #!/bin/bash
 
 LOCKFILE=/tmp/puregym.lock
